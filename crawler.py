@@ -2,57 +2,29 @@ import requests
 from bs4 import BeautifulSoup
 import psycopg2
 import logging
-import time
-import random
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 import os
-from concurrent.futures import ThreadPoolExecutor
-
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+from indexer import index_document, reverse_index, create_tables
+from queue import Queue
+import threading
 
 load_dotenv()
+
+base_url = "https://react.dev"
+# Queue to store links to be crawled
+links_to_crawl = Queue()
+links_to_crawl.put(base_url)
+
 # PostgreSQL connection details
 host = os.getenv("DB_HOST")
 database = os.getenv("DB_NAME")
 user = os.getenv("DB_USER")
 password = os.getenv("DB_PASSWORD")
 
-# Define the starting URL
-starting_url = "https://en.wikipedia.org/wiki/Artificial_intelligence"
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-def get_links(url):
-    links = []
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        for link in soup.find_all('a', href=True):
-            if link['href'].startswith('/wiki/'):
-                links.append("https://en.wikipedia.org" + link['href'])
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error getting links from {url}: {e}")
-    return links
-
-def get_text(url):
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        # Extract the main article text
-        article_text = '\n'.join([p.get_text() for p in soup.find_all('p')])
-        return article_text
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error getting text from {url}: {e}")
-        return ""
-
-def get_title(url):
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        title = soup.title.string
-        return title
-    except (requests.exceptions.RequestException, AttributeError) as e:
-        logging.error(f"Error getting title from {url}: {e}")
-        return ""
 
 def save_to_database(title, url, text):
     try:
@@ -63,55 +35,89 @@ def save_to_database(title, url, text):
             password=password
         )
         cur = conn.cursor()
-        cur.execute("INSERT INTO wikipedia_pages (title, url, text) VALUES (%s, %s, %s)", (title, url, text))
+        cur.execute("INSERT INTO Documents (url, title, content) VALUES (%s, %s, %s) RETURNING id", (url, title, text))
+        document_id = cur.fetchone()[0]
         conn.commit()
         conn.close()
+        return document_id
     except psycopg2.Error as e:
         logging.error(f"Error saving data to database: {e}")
 
-def crawl_page(link):
-    logging.info(f"Crawling: {link}")
+def process_link(link, visited_links, base_url):
     try:
-        links = get_links(link)
-        text = get_text(link)
-        title = get_title(link)
-
-        logging.info(f"Saving to database")
-        save_to_database(title, link, text)
+        response = requests.get(link)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        title = soup.title.string
+        # Extract the main article text
+        text = '\n'.join([p.get_text() for p in soup.find_all('p')])
+        
+        # Save the document to the database
+        document_id = save_to_database(title, link, text)
+        
+        # Index the document
+        index_document(document_id, text)
 
         logging.info(f"Title: {title}")
         logging.info(f"URL: {link}")
         logging.info(f"Text Length: {len(str(text))}")
-        logging.info(f"Extracted links: {len(links)}")
-        return links
-    except Exception as e:
+
+        # Mark the link as visited
+        visited_links.add(link)
+
+        # Extract all links from the page
+        for anchor in soup.find_all('a', href=True):
+            href = anchor['href']
+            # Remove "/" from the end of the URL
+            href = href.rstrip("/")
+            # Remove the fragment part of the URL
+            href = href.split("#")[0]
+            # Check if the link belongs to the same domain and has not been visited yet
+            parsed_href = urlparse(href)
+            # print(parsed_href)
+            if parsed_href.netloc == "" and (base_url+href) not in visited_links and (base_url+href) not in links_to_crawl.queue and href.startswith("/"):
+                # Convert relative links to absolute links
+                if not parsed_href.scheme:
+                    href = base_url + href
+                links_to_crawl.put(href)
+                print("put", href)
+
+    except (requests.exceptions.RequestException, AttributeError, psycopg2.Error) as e:
         logging.error(f"Error processing {link}: {e}")
-        return []
 
-def main():
-    # Initialize variables
-    crawled = set()
-    to_crawl = [starting_url]
-    count = 0
-    max_pages = 1000
+def crawl_and_index(base_url):
+    visited_links = set()
+    threads = []
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        while count < max_pages and to_crawl:
-            link = to_crawl.pop(0)
-            if link in crawled:
-                continue
-            crawled.add(link)
+    while True:
+        if len(threads) >= 10:
+            for thread in threads:
+                thread.join()
+            threads = []
+        if links_to_crawl.empty() and len(threads) == 0:
+            break
 
-            try:
-                new_links = executor.submit(crawl_page, link).result()
-                for l in new_links:
-                    if l not in crawled and l not in to_crawl:
-                        to_crawl.append(l)
-                count += 1
-            except Exception as e:
-                logging.error(f"Error processing {link}: {e}")
+        if links_to_crawl.empty():
+            continue
 
-            time.sleep(random.uniform(0.5, 2))  # Add random delay to avoid overloading the server
+        link = links_to_crawl.get()
+
+        if link in visited_links:
+            continue
+
+        logging.info(f"Crawling: {link}")
+
+        # Create and start a thread for crawling
+        thread = threading.Thread(target=process_link, args=(link, visited_links, base_url))
+        thread.start()
+        threads.append(thread)
+
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
+
+    # Reverse index
+    reverse_index()
 
 if __name__ == "__main__":
-    main()
+    create_tables()
+    crawl_and_index(base_url)
