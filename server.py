@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import psycopg2
 import os
@@ -17,6 +18,15 @@ password = os.getenv("DB_PASSWORD")
 # Initialize FastAPI
 app = FastAPI()
 
+# Allow CORS for all origins (you can customize origins if needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
 def search_documents(query: str) -> List[dict]:
     query = query.lower()
     words = query.split()
@@ -31,9 +41,6 @@ def search_documents(query: str) -> List[dict]:
         )
         cur = conn.cursor()
         for word in words:
-            # cur.execute("SELECT url FROM Documents WHERE id IN (SELECT document_id FROM WordDocuments WHERE word_id = (SELECT id FROM Words WHERE word = %s))", (word,))
-            # results.extend(cur.fetchall())
-            
             cur.execute("SELECT document_id, term_frequency, inverse_document_frequency FROM WordDocuments WHERE word_id = (SELECT id FROM Words WHERE word = %s)", (word,))
             result = cur.fetchall()
             for r in result:
@@ -54,7 +61,7 @@ def search_documents(query: str) -> List[dict]:
 class SearchQuery(BaseModel):
     query: str
 
-@app.get("/search")
+@app.post("/search")
 def search(SearchQuery: SearchQuery):
     results = search_documents(SearchQuery.query)
     return results
