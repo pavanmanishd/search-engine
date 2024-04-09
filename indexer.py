@@ -101,6 +101,21 @@ def populate_tables():
                 cur.execute("INSERT INTO WordDocuments (word_id, document_id, term_frequency) VALUES (%s, %s, %s)", (word_id, document_id, count / len(words)))
             conn.commit()  # Commit after all words for a document are processed
 
+        #populate inverse document frequency
+        logging.info("Populating inverse document frequency...")
+        cur.execute("SELECT DISTINCT word_id FROM WordDocuments")
+        words = cur.fetchall()
+        
+        cur.execute("SELECT COUNT(DISTINCT id) FROM Documents")
+        no_of_documents = cur.fetchone()[0]
+
+        for word_id in words:
+            logging.info(f"Processing word {word_id}...")
+            cur.execute("SELECT COUNT(DISTINCT document_id) FROM WordDocuments WHERE word_id = %s", (word_id,))
+            document_count = cur.fetchone()[0]
+            cur.execute("UPDATE WordDocuments SET inverse_document_frequency = %s WHERE word_id = %s", (document_count / no_of_documents, word_id))
+            conn.commit()
+
         conn.close()
         logging.info("Tables populated successfully.")
     except (Exception, psycopg2.Error) as error:
