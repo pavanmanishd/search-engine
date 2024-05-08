@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  new-postgres:
+    build: ./postgres-init
+    container_name: new-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./postgres-init/postgres.conf:/etc/postgresql/postgresql.conf"
+    environment:
+      POSTGRES_PASSWORD: mysecretpassword
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+
+  python_app:
+    build:
+      context: .
+    environment:
+      DB_HOST: 172.25.11.2
+      DB_NAME: searchengine
+      DB_USER: postgres
+      DB_PASSWORD: mysecretpassword
+    ports:
+      - "8000:8000"
+    depends_on:
+      - new-postgres
+    command: ["python", "server.py"]
+

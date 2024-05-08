@@ -10,7 +10,7 @@ host = os.getenv("DB_HOST")
 database = os.getenv("DB_NAME")
 user = os.getenv("DB_USER")
 password = os.getenv("DB_PASSWORD")
-
+port = 5432
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -21,7 +21,8 @@ def create_tables():
             host=host,
             database=database,
             user=user,
-            password=password
+            password=password,
+            port=port
         )
         cur = conn.cursor()
 

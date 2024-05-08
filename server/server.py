@@ -15,7 +15,7 @@ host = os.getenv("DB_HOST")
 database = os.getenv("DB_NAME")
 user = os.getenv("DB_USER")
 password = os.getenv("DB_PASSWORD")
-
+port = 5432
 # Initialize FastAPI
 app = FastAPI()
 
@@ -44,7 +44,8 @@ def search_documents(query: str) -> List[dict]:
             host=host,
             database=database,
             user=user,
-            password=password
+            password=password,
+            port=port
         )
         cur = conn.cursor()
 
