@@ -32,7 +32,14 @@ This project implements a search API using FastAPI and PostgreSQL. It allows use
    docker compose up
    ```
 
-4. Run the frontend to try it. Go to the root directory then:
+4. ***Note: After running the Docker container, please allow some time for the crawler to crawl all the websites. Currently, it is limited to the react.dev subdomain.*** 
+You can monitor the progress by checking the server logs:
+
+   ```bash
+   docker compose logs --follow
+   ```
+
+5. Run the frontend to try it. Go to the root directory then:
 
    ```bash
    cd client
@@ -40,7 +47,7 @@ This project implements a search API using FastAPI and PostgreSQL. It allows use
    npm run dev
    ```
 
-5. Try the search engine by visiting [localhost:5173](http://localhost:5173).
+6. Try the search engine by visiting [localhost:5173](http://localhost:5173).
 
 ## Usage
 
