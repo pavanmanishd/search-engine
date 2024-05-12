@@ -32,6 +32,11 @@ This project implements a search API using FastAPI and PostgreSQL. It allows use
    docker compose up
    ```
 
+   If you want to run the Docker container in the background, you can detach it by adding the `-d` flag:
+
+   ```bash
+   docker compose up -d
+   ```
 4. ***Note: After running the Docker container, please allow some time for the crawler to crawl all the websites. Currently, it is limited to the react.dev subdomain.*** 
 You can monitor the progress by checking the server logs:
 
