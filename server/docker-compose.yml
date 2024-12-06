@@ -11,18 +11,27 @@ services:
     environment:
       POSTGRES_PASSWORD: mysecretpassword
     command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   python_app:
     build:
       context: .
     environment:
-      DB_HOST: 127.0.0.1
+      DB_HOST: new-postgres
       DB_NAME: searchengine
       DB_USER: postgres
       DB_PASSWORD: mysecretpassword
     ports:
       - "8000:8000"
     depends_on:
-      - new-postgres
-    command: ["python","app.py"]
+      new-postgres:
+        condition: service_healthy
+    command: ["python", "app.py"]
 
+networks:
+  default:
+    name: app_network
